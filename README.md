@@ -2,7 +2,9 @@
 
 `gopherdl` is a Python3 program for downloading files and menus over the gopher
 protocol. It is similar to wget in terms of commandline options and basic
-features. 
+features.
+
+Verified with Python3.11
 
 ## Usage Examples
 

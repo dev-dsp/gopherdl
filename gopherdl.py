@@ -10,74 +10,111 @@ import time
 import socket
 import os
 import re
+import logging
+import inspect
+
+from typing import Callable
+
+socket.setdefaulttimeout(5)
+
+
+def log(f: Callable) -> Callable:
+    def _str_slice(_str, maxlen=150):
+        return (
+            _str
+            if len(_str) <= maxlen
+            else _str[: maxlen // 2] + "..." + _str[-(maxlen // 2) :]
+        )
+
+    def _log(*args, **kwargs):
+        curframe = inspect.currentframe()
+        calframe = inspect.getouterframes(curframe, 2)
+
+        logging.debug(
+            f"CALL {f.__name__}(args={_str_slice(str(args))}, kwargs={_str_slice(str(kwargs))}) CALLER {calframe[1][3]}()"
+        )
+        result = f(*args, **kwargs)
+        logging.debug(
+            f"EXIT {f.__name__}(args={_str_slice(str(args))}, kwargs={_str_slice(str(kwargs))}) RETURN {_str_slice(str(result))}"
+        )
+        return result
+
+    return _log
+
 
 # TOFIX: content=None on write_gopherurl is a bad codesmell, this function
 # should only be called in one place
 
-class Config():
 
-    getopt_spec = "l:w:hrspcdmnA:R:M"
+class Config:
+
+    getopt_spec = "l:w:hrspcdmnO:A:R:M"
 
     def __init__(self, optdict):
         # Commandline options
         flags = optdict.keys()
-        self.recursive = '-r' in flags
-        self.maxdepth = math.inf if not '-l' in flags else int(optdict['-l'])
-        self.spanhosts = '-s' in flags
-        self.helpme = '-h' in flags
-        self.clobber = '-c' in flags
-        self.only_save_menu = '-m' in flags
-        self.no_save_menu = '-n' in flags
-        self.ascend_parents = '-p' in flags
-        self.delay = 0.0 if not '-w' in flags else float(optdict['-w'])
-        self.debug = '-d' in flags
-        self.accept_regex = None if not '-A' in flags else re.compile(optdict['-A'])
-        self.reject_regex = None if not '-R' in flags else re.compile(optdict['-R'])
-        self.regex_on_menus = '-M' in flags
+        self.recursive = "-r" in flags
+        self.maxdepth = math.inf if not "-l" in flags else int(optdict["-l"])
+        self.spanhosts = "-s" in flags
+        self.helpme = "-h" in flags
+        self.clobber = "-c" in flags
+        self.only_save_menu = "-m" in flags
+        self.no_save_menu = "-n" in flags
+        self.ascend_parents = "-p" in flags
+        self.delay = 0.0 if not "-w" in flags else float(optdict["-w"])
+        self.debug = "-d" in flags
+        self.accept_regex = None if not "-A" in flags else re.compile(optdict["-A"])
+        self.reject_regex = None if not "-R" in flags else re.compile(optdict["-R"])
+        self.regex_on_menus = "-M" in flags
+        self.archive_directory = str(optdict["-O"]) if "-O" in flags else "./archive/"
 
     def __str__(self):
-        lst = [ "  recursive = %s" % self.recursive,
-                "  maxdepth = %s" % self.maxdepth,
-                "  spanhosts = %s" % self.spanhosts,
-                "  helpme = %s" % self.helpme,
-                "  clobber = %s" % self.clobber,
-                "  only_save_menu = %s" % self.only_save_menu,
-                "  ascend_parents = %s" % self.ascend_parents,
-                "  delay = %s" % self.delay,
-                "  debug = %s" % self.debug,
-                "  accept_regex = %s" % self.accept_regex,
-                "  reject_regex = %s" % self.reject_regex,
-                "  regex_on_menus = %s" % self.regex_on_menus ]
+        return f"""recursive = {self.recursive}
+maxdepth = {self.maxdepth}
+spanhosts = {self.spanhosts}
+helpme = {self.helpme}
+clobber = {self.clobber}
+only_save_menu = {self.only_save_menu}
+ascend_parents = {self.ascend_parents}
+delay = {self.delay}
+debug = {self.debug}
+accept_regex = {self.accept_regex}
+reject_regex = {self.reject_regex}
+regex_on_menus = {self.regex_on_menus}
+archive_directory = {self.archive_directory}
+"""
 
-        return "\n".join(lst)
 
 def print_options():
-    helpdoc = { "-r" : "Enable recursive downloads",
-                "-l [depth]" : "Maximum depth in recursive downloads (default none)",
-                "-s" : "Span hosts on recursive downloads",
-                "-h" : "Show this help",
-                "-c" : "Enable file clobbering (overwrite existing)",
-                "-m" : "Only download gopher menus",
-                "-n" : "Never download gopher menus",
-                "-p" : "Allow ascension to the parent directories",
-                "-w [seconds]" : "Delay between downloads",
-                "-d" : "Enable debug messages",
-                "-A" : "Accept URL regex",
-                "-R" : "Reject URL regex",
-                "-M" : "Apply accept/reject regex rules to menus (can prevent recursion)" }
+    helpdoc = {
+        "-r": "Enable recursive downloads",
+        "-l [depth]": "Maximum depth in recursive downloads (default none)",
+        "-s": "Span hosts on recursive downloads",
+        "-h": "Show this help",
+        "-c": "Enable file clobbering (overwrite existing)",
+        "-m": "Only download gopher menus",
+        "-n": "Never download gopher menus",
+        "-p": "Allow ascension to the parent directories",
+        "-w [seconds]": "Delay between downloads",
+        "-d": "Enable debug messages",
+        "-A": "Accept URL regex",
+        "-R": "Reject URL regex",
+        "-M": "Apply accept/reject regex rules to menus (can prevent recursion)",
+        "-O": "Output directory for downloads (default ./archive/)",
+    }
 
-    for (key, value) in helpdoc.items():
+    for key, value in helpdoc.items():
         print("  {} {}".format(key, value))
 
-def debug(msg, config):
-    if config.debug:
-        print("debug: {}".format(msg))
 
-class GopherURL():
-    invalid_types = ['7',         # Search service
-                     '2',         # CSO
-                     '3',         # Error
-                     '8', 'T']    # telnet
+class GopherURL:
+    invalid_types = [
+        "7",  # Search service
+        "2",  # CSO
+        "3",  # Error
+        "8",
+        "T",
+    ]  # telnet
 
     def __init__(self, type, text, path, host, port):
         self.host = host
@@ -87,8 +124,12 @@ class GopherURL():
         self.type = type
 
     def __str__(self):
-        s = '<GopherURL [{}]({})({})({})>'
-        return s.format(self.type, self.host, self.port, self.path)
+        return (
+            f"<GopherURL type={self.type} url={self.host}:{self.port} path={self.path}>"
+        )
+
+    def __repr__(self):
+        return self.__str__()
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
@@ -107,7 +148,7 @@ class GopherURL():
             return False
         if self.type in GopherURL.invalid_types:
             return False
-        if 'URL:' in self.path:
+        if "URL:" in self.path:
             return False
 
         # If the path contains enough "../", it would be saved outside our
@@ -115,12 +156,13 @@ class GopherURL():
         file_path = os.path.relpath(self.to_file_path())
         in_download_dir = file_path.startswith(self.host)
 
-        if not in_download_dir: 
+        if not in_download_dir:
             return False
 
         return True
 
     def download(self, delay):
+        retries = 0
         while True:
             time.sleep(delay)
             sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
@@ -129,22 +171,36 @@ class GopherURL():
                 sock.connect((self.host, self.port))
                 sock.send(bytes(self.path + "\r\n", "utf-8"))
                 data = None
-                while data != b'':
+                while data != b"":
                     data = sock.recv(1024)
                     buffer.extend(data)
                 sock.close()
-            except ConnectionRefusedError:
-                print("Connection refused from {}:{}{}, retrying...".format(self.host, self.port, self.path))
-                delay = delay if delay != 0 else 1
+            except (socket.gaierror, TimeoutError, ConnectionRefusedError) as e:
+                retries += 1
+                if retries > 3:
+                    logging.warning(
+                        f"{e} while downloading from {self.host}:{self.port}{self.path} after 3 retries"
+                    )
+                    break
+                delay = delay + delay / 4 if delay != 0 else 1
+                logging.debug(
+                    f"{e} while downloading from {self.host}:{self.port}{self.path}, retrying ({retries}/3) in {delay}s"
+                )
                 continue
             return buffer
 
     def is_menu(self):
-        return self.type == '1'
+        return self.type == "1"
 
     # As it would look in a browser urlbar
     def to_url(self):
-        return urllib.parse.urlunparse(('gopher', self.host, self.path, '', '', ''))
+        path_parts = self.path.split("?")
+        path, query = (
+            (self.path, "")
+            if len(path_parts) == 1
+            else (path_parts[0], "?".join(path_parts[1:]))
+        )
+        return urllib.parse.urlunparse(("gopher", self.host, path, query, "", ""))
 
     # path without adding gophermap
     def to_url_path(self):
@@ -160,15 +216,16 @@ class GopherURL():
 
 
 def debug_list(lst, message, config):
-    debug(message, config)
-    for item in lst:
-        debug(item, config)
+    logging.debug(message)
+    logging.log(5, lst)
+
 
 def print_help_quit(ret):
     print("Usage: gopherdl.py [options] [url1 url2 ...]")
     print("Options:")
     print_options()
     quit(ret)
+
 
 def mkdirs(path):
     cd = str()
@@ -177,59 +234,68 @@ def mkdirs(path):
         if not os.path.exists(cd):
             os.mkdir(cd)
 
-def get_menus(gurls): 
-    return [ g for g in gurls if g.is_menu() ]
 
-def get_files(gurls): 
-    return [ g for g in gurls if not g.is_menu() ]
+def get_menus(gurls):
+    return [g for g in gurls if g.is_menu()]
+
+
+def get_files(gurls):
+    return [g for g in gurls if not g.is_menu()]
+
 
 def slurp(path):
     with open(path, "rb") as f:
         return f.read()
 
+
 # Extract urls from a gopher menu
+@log
 def getlinks(menucontent, config):
     urls = []
-    for line in menucontent.split(sep='\n'):
-        tokens = line.strip().split(sep='\t')
+    for line in menucontent.split(sep="\n"):
+        tokens = line.strip().split(sep="\t")
         try:
-            type = tokens[0][0]
+            typ = tokens[0][0]
+            if typ in ["i"]:
+                logging.log(5, f"skipping informational {line}")
+                continue
             text = tokens[0][1:]
             path = tokens[1].strip()
             host = tokens[2].strip()
             port = int(tokens[3].strip())
 
-            url = GopherURL(type, text, path, host, port)
+            url = GopherURL(typ, text, path, host, port)
 
             if not url.valid():
+                logging.log(5, f"skipping invalid {url}")
                 continue
 
+            logging.debug(f"adding {url}")
             urls.append(url)
 
         except IndexError:
-            debug("Invalid line (IndexError)", config)
+            logging.debug(f"Invalid line (IndexError): {', '.join(tokens)}")
         except ValueError as e:
-            debug("Invalid Port: {}".format(e), config)
-
-    debug_list(urls, "All urls: {}".format(len(urls)), config)
+            logging.debug("Invalid Port: {}".format(e))
 
     return urls
 
-def write_gopherurl(gurl, config, content=None):
 
-    outfile = gurl.to_file_path()
+def write_gopherurl(gurl, config, content=None):
+    outfile = os.path.join(config.archive_directory, gurl.to_file_path())
 
     # If it exists and config says no clobber, leave
     if os.path.exists(outfile) and not config.clobber:
-        print("Not overwriting:", outfile)
+        logging.debug("Not overwriting: %s", outfile)
         return
 
     mkdirs(os.path.dirname(outfile))
     content = content if content != None else gurl.download(config.delay)
+    if content:
+        logging.debug("write_gopherurl: {}".format(gurl))
+        with open(outfile, "wb") as outfile:
+            outfile.write(content)
 
-    debug("write_gopherurl: {}".format(gurl), config)
-    with open(outfile, "wb") as outfile:
-        outfile.write(content)
 
 # Return a tuple, (host,port,path)
 def spliturl(urlstr):
@@ -250,7 +316,8 @@ def spliturl(urlstr):
     host = url.netloc.split(":")[0]
     port = 70 if url.port is None else url.port
 
-    return (host, port, path)
+    return (host, port, path + f"?{url.query}" if url.query else path)
+
 
 def crawl(root_gurl, config):
 
@@ -258,12 +325,12 @@ def crawl(root_gurl, config):
 
         on_different_host = root_gurl.host != link.host
         if not config.spanhosts and on_different_host:
-            debug("Not spanning: {} != {}".format(root_gurl.host, link.host), config)
+            logging.debug("Not spanning: {} != {}".format(root_gurl.host, link.host))
             return False
 
         off_original_path = not link.path.startswith(root_gurl.path)
         if not config.ascend_parents and off_original_path:
-            debug("Not Ascending: {} <-> {}".format(root_gurl.path, link.path), config)
+            logging.debug("Not Ascending: {} <-> {}".format(root_gurl.path, link.path))
             return False
 
         # If config says not to apply regex on menus, stop here if it is
@@ -274,16 +341,16 @@ def crawl(root_gurl, config):
         # Filter by regular expressions
         url = link.to_url()
 
-        if config.reject_regex != None: 
+        if config.reject_regex != None:
             match = config.reject_regex.fullmatch(url)
             if match != None:
-                debug("Reject: {}".format(url), config)
+                logging.debug("Reject: {}".format(url))
                 return False
 
         if config.accept_regex != None:
             match = config.accept_regex.fullmatch(url)
             if match != None:
-                debug("Accept: {}".format(url), config)
+                logging.debug("Accept: {}".format(url))
                 return True
             else:
                 return False
@@ -294,15 +361,21 @@ def crawl(root_gurl, config):
         path = gurl.to_file_path()
         content = None
         if os.path.exists(path) and not config.clobber:
-            print(":: Using existing menu {}".format(path))
+            logging.info("Using existing menu {}".format(path))
             content = slurp(path)
         else:
-            content = gurl.download(config.delay)
-        return content.decode('utf-8', errors='ignore') 
+            try:
+                content = gurl.download(config.delay)
+            except (socket.gaierror, TimeoutError) as e:
+                logging.warning(f"{e} while retrieving menu content from {gurl}")
+                return None
+        return content.decode("utf-8", errors="ignore") if content is not None else None
 
+    @log
     def gopher_urls_from_menu_link(menu_gurl):
-        debug(menu_gurl, config)
         menu_content = retrieve_menu_content(menu_gurl)
+        if menu_content is None:
+            return []
 
         gurls = getlinks(menu_content, config)
         debug_list(gurls, "Before filter # urls: {}".format(len(gurls)), config)
@@ -314,11 +387,12 @@ def crawl(root_gurl, config):
 
     gurls = set(gopher_urls_from_menu_link(root_gurl))
     menus = list(set(get_menus(gurls))) + [root_gurl]
+    logging.debug(f"initial menu items from {root_gurl}: {menus}")
     depth = 0
 
     for menu in menus:
         if depth > config.maxdepth:
-            debug("Maxdepth {} reached".format(config.maxdepth), config)
+            logging.debug("Maxdepth {} reached".format(config.maxdepth))
             break
 
         new_gurls = set(gopher_urls_from_menu_link(menu))
@@ -328,31 +402,38 @@ def crawl(root_gurl, config):
         menus.extend(new_unique_gurls_menus)
         depth += 1
 
-        print("{} | {}/{} | {} ".format( len(gurls), depth, len(menus), menu.to_url_path()))
+        logging.info(
+            "{} | {}/{} | {} ".format(len(gurls), depth, len(menus), menu.to_url_path())
+        )
 
     return gurls
+
 
 def download_gopher_urls(gopher_urls, config):
     for i in range(len(gopher_urls)):
         gurl = gopher_urls[i]
-        print("[{}/{}] {}".format((i + 1), len(gopher_urls), gurl.to_file_path()))
+        logging.info(
+            "[{}/{}] {}".format((i + 1), len(gopher_urls), gurl.to_file_path())
+        )
         write_gopherurl(gurl, config)
+
 
 def gopherdl(host, config):
 
     # hueristic: probably a menu if there's no file extension or ends in /
     def probably_a_menu(path):
         end = path.split("/")[-1]
-        return not "." in end or path[-1] == '/'
+        return not "." in end or path[-1] == "/"
 
     host, port, path = spliturl(host)
+    logging.info(f"host={host} port={port} path={path}")
     root_gurl_type = "1" if probably_a_menu(path) else "0"
     root_gurl = GopherURL(root_gurl_type, "[ROOT URL]", path, host, port)
-    debug("root_gurl: {}".format(root_gurl), config)
+    logging.debug("root_gurl: %s", root_gurl)
 
     if config.recursive:
         # Recursive download
-        print(":: Downloading menu tree")
+        logging.info("Downloading menu tree")
         gopher_urls = crawl(root_gurl, config)
         gopher_files = get_files(gopher_urls)
         gopher_menus = get_menus(gopher_urls)
@@ -364,26 +445,24 @@ def gopherdl(host, config):
             gopher_files = []
 
         if gopher_urls == []:
-            print(":: Nothing to download")
+            logging.info("Nothing to download")
             return
 
         if len(gopher_menus) > 0:
-            print(":: Downloading {} menus".format(len(gopher_menus)))
+            logging.info("Downloading {} menus".format(len(gopher_menus)))
             download_gopher_urls(gopher_menus, config)
 
         if len(gopher_files) > 0:
-            print(":: Downloading {} files".format(len(gopher_files)))
+            logging.info("Downloading {} files".format(len(gopher_files)))
             download_gopher_urls(gopher_files, config)
 
-    else: 
+    else:
         # Single file download
-        print(":: Downloading single file ")
-        print(root_gurl.to_file_path())
+        logging.info("Downloading single file %s", root_gurl.to_file_path())
         write_gopherurl(root_gurl, config)
 
 
 def main():
-
     optlist, args = ([], [])
     try:
         optlist, args = getopt.getopt(sys.argv[1:], Config.getopt_spec)
@@ -394,7 +473,12 @@ def main():
     config = Config(optdict)
     hosts = args
 
-    debug("\n{}".format(config), config)
+    logging.basicConfig(
+        format="%(asctime)s - %(funcName)30s() - %(levelname)7s - %(message)s",
+        level="DEBUG" if config.debug else "INFO",
+    )
+    logging.debug("config\n%s", config)
+    logging.debug("hosts\n%s", hosts)
 
     if config.helpme:
         print_help_quit(0)
@@ -405,7 +489,8 @@ def main():
         try:
             gopherdl(host, config)
         except ValueError as e:
-            print(e)
+            logging.exception(e)
+
 
 if __name__ == "__main__":
     main()
